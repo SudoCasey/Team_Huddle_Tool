@@ -1,4 +1,4 @@
-# Morning Huddle Notes Tool
+# Team Huddle Notes Tool
 
 A React-based frontend tool for managing team huddle notes with randomization and export functionality. Perfect for daily team standups and workload tracking.
 
