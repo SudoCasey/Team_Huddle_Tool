@@ -18,13 +18,17 @@ import {
   Card,
   CardContent,
   CardActions,
-
+  Switch,
+  FormControlLabel,
+  Collapse,
 } from '@mui/material';
 import {
   Add as AddIcon,
   Delete as DeleteIcon,
   Shuffle as ShuffleIcon,
   Download as DownloadIcon,
+  ExpandMore as ExpandMoreIcon,
+  ExpandLess as ExpandLessIcon,
 } from '@mui/icons-material';
 
 const HuddleNotesTool = () => {
@@ -33,12 +37,18 @@ const HuddleNotesTool = () => {
   const [randomizedOrder, setRandomizedOrder] = useState([]);
   const [notes, setNotes] = useState({});
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
-
   const [isLoaded, setIsLoaded] = useState(false);
+  
+  // Compact UI state
+  const [isCompactMode, setIsCompactMode] = useState(false);
+  const [teamMembersExpanded, setTeamMembersExpanded] = useState(true);
 
-  // Load team members from localStorage on component mount
+  // Load settings from localStorage on component mount
   useEffect(() => {
     const savedTeamMembers = localStorage.getItem('huddleTeamMembers');
+    const savedCompactMode = localStorage.getItem('huddleCompactMode');
+    const savedTeamMembersExpanded = localStorage.getItem('huddleTeamMembersExpanded');
+    
     console.log('Loading from localStorage:', savedTeamMembers);
     if (savedTeamMembers) {
       try {
@@ -49,6 +59,17 @@ const HuddleNotesTool = () => {
         console.error('Error loading team members from localStorage:', error);
       }
     }
+    
+    // Load compact mode setting
+    if (savedCompactMode !== null) {
+      setIsCompactMode(JSON.parse(savedCompactMode));
+    }
+    
+    // Load team members expanded state
+    if (savedTeamMembersExpanded !== null) {
+      setTeamMembersExpanded(JSON.parse(savedTeamMembersExpanded));
+    }
+    
     setIsLoaded(true);
   }, []);
 
@@ -59,6 +80,20 @@ const HuddleNotesTool = () => {
       localStorage.setItem('huddleTeamMembers', JSON.stringify(teamMembers));
     }
   }, [teamMembers, isLoaded]);
+
+  // Save compact mode setting to localStorage
+  useEffect(() => {
+    if (isLoaded) {
+      localStorage.setItem('huddleCompactMode', JSON.stringify(isCompactMode));
+    }
+  }, [isCompactMode, isLoaded]);
+
+  // Save team members expanded state to localStorage
+  useEffect(() => {
+    if (isLoaded) {
+      localStorage.setItem('huddleTeamMembersExpanded', JSON.stringify(teamMembersExpanded));
+    }
+  }, [teamMembersExpanded, isLoaded]);
 
   // Add a new team member
   const addTeamMember = () => {
@@ -162,11 +197,31 @@ const HuddleNotesTool = () => {
   return (
     <Box>
       {/* Team Member Management */}
-      <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h5" gutterBottom>
-          Team Members
-        </Typography>
-        <Grid container spacing={2} alignItems="center">
+      <Paper elevation={3} sx={{ p: isCompactMode ? 2 : 3, mb: isCompactMode ? 2 : 3 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Typography variant="h5">
+            Team Members
+          </Typography>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={isCompactMode}
+                onChange={(e) => setIsCompactMode(e.target.checked)}
+                color="primary"
+                size="small"
+              />
+            }
+            label="Compact"
+            labelPlacement="start"
+            sx={{ 
+              '& .MuiFormControlLabel-label': { 
+                fontSize: '0.875rem',
+                color: 'text.secondary'
+              }
+            }}
+          />
+        </Box>
+        <Grid container spacing={isCompactMode ? 1 : 2} alignItems="center">
           <Grid item xs={12} sm={8}>
             <TextField
               fullWidth
@@ -175,6 +230,7 @@ const HuddleNotesTool = () => {
               onChange={(e) => setNewMemberName(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && addTeamMember()}
               placeholder="Enter team member name"
+              size={isCompactMode ? "small" : "medium"}
             />
           </Grid>
           <Grid item xs={12} sm={4}>
@@ -184,6 +240,7 @@ const HuddleNotesTool = () => {
               startIcon={<AddIcon />}
               onClick={addTeamMember}
               disabled={!newMemberName.trim()}
+              size={isCompactMode ? "small" : "medium"}
             >
               Add Member
             </Button>
@@ -191,11 +248,17 @@ const HuddleNotesTool = () => {
         </Grid>
 
         {teamMembers.length > 0 && (
-          <Box sx={{ mt: 2 }}>
+          <Box sx={{ mt: isCompactMode ? 1 : 2 }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-              <Typography variant="h6">
-                Current Team ({teamMembers.length} members)
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }} 
+                   onClick={() => setTeamMembersExpanded(!teamMembersExpanded)}>
+                <Typography variant="h6">
+                  Current Team ({teamMembers.length} members)
+                </Typography>
+                <IconButton size="small" sx={{ ml: 1 }}>
+                  {teamMembersExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                </IconButton>
+              </Box>
               <Button
                 size="small"
                 variant="outlined"
@@ -205,32 +268,35 @@ const HuddleNotesTool = () => {
                 Clear All
               </Button>
             </Box>
-            <List dense>
-              {teamMembers.map((member) => (
-                <ListItem key={member.id}>
-                  <ListItemText primary={member.name} />
-                  <ListItemSecondaryAction>
-                    <IconButton
-                      edge="end"
-                      onClick={() => removeTeamMember(member.id)}
-                      color="error"
-                    >
-                      <DeleteIcon />
-                    </IconButton>
-                  </ListItemSecondaryAction>
-                </ListItem>
-              ))}
-            </List>
+            <Collapse in={teamMembersExpanded}>
+              <List dense={isCompactMode}>
+                {teamMembers.map((member) => (
+                  <ListItem key={member.id} sx={{ py: isCompactMode ? 0.5 : 1 }}>
+                    <ListItemText primary={member.name} />
+                    <ListItemSecondaryAction>
+                      <IconButton
+                        edge="end"
+                        onClick={() => removeTeamMember(member.id)}
+                        color="error"
+                        size="small"
+                      >
+                        <DeleteIcon />
+                      </IconButton>
+                    </ListItemSecondaryAction>
+                  </ListItem>
+                ))}
+              </List>
+            </Collapse>
           </Box>
         )}
       </Paper>
 
       {/* Randomization Controls */}
-      <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
+      <Paper elevation={3} sx={{ p: isCompactMode ? 2 : 3, mb: isCompactMode ? 2 : 3 }}>
         <Typography variant="h5" gutterBottom>
           Randomization
         </Typography>
-        <Grid container spacing={2} alignItems="center">
+        <Grid container spacing={isCompactMode ? 1 : 2} alignItems="center">
           <Grid item xs={12} sm={6}>
             <Button
               fullWidth
@@ -239,6 +305,7 @@ const HuddleNotesTool = () => {
               startIcon={<ShuffleIcon />}
               onClick={randomizeTeam}
               disabled={teamMembers.length === 0}
+              size={isCompactMode ? "small" : "medium"}
             >
               Randomize Order
             </Button>
@@ -252,6 +319,7 @@ const HuddleNotesTool = () => {
                   startIcon={<DownloadIcon />}
                   onClick={() => exportNotes('txt')}
                   disabled={teamMembers.length === 0}
+                  size={isCompactMode ? "small" : "medium"}
                 >
                   Export TXT
                 </Button>
@@ -263,6 +331,7 @@ const HuddleNotesTool = () => {
                   startIcon={<DownloadIcon />}
                   onClick={() => exportNotes('csv')}
                   disabled={teamMembers.length === 0}
+                  size={isCompactMode ? "small" : "medium"}
                 >
                   Export CSV
                 </Button>
@@ -272,11 +341,11 @@ const HuddleNotesTool = () => {
         </Grid>
 
         {randomizedOrder.length > 0 && (
-          <Box sx={{ mt: 2 }}>
+          <Box sx={{ mt: isCompactMode ? 1 : 2 }}>
             <Typography variant="h6" gutterBottom>
               Randomized Order
             </Typography>
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
               {randomizedOrder.map((memberId, index) => {
                 const member = getMemberById(memberId);
                 return (
@@ -285,6 +354,7 @@ const HuddleNotesTool = () => {
                     label={`${index + 1}. ${member.name}`}
                     color="primary"
                     variant="outlined"
+                    size={isCompactMode ? "small" : "medium"}
                   />
                 );
               })}
@@ -295,29 +365,30 @@ const HuddleNotesTool = () => {
 
       {/* Notes Section */}
       {randomizedOrder.length > 0 && (
-        <Paper elevation={3} sx={{ p: 3 }}>
+        <Paper elevation={3} sx={{ p: isCompactMode ? 2 : 3 }}>
           <Typography variant="h5" gutterBottom>
             Notes for Each Team Member
           </Typography>
-          <Grid container spacing={2}>
+          <Grid container spacing={isCompactMode ? 1 : 2}>
             {randomizedOrder.map((memberId, index) => {
               const member = getMemberById(memberId);
               
               return (
                 <Grid item xs={12} key={memberId}>
                   <Card variant="outlined">
-                    <CardContent>
+                    <CardContent sx={{ p: isCompactMode ? 1.5 : 2 }}>
                       <Typography variant="h6" gutterBottom>
                         {index + 1}. {member.name}
                       </Typography>
                       <TextField
                         fullWidth
                         multiline
-                        rows={3}
+                        rows={isCompactMode ? 2 : 3}
                         value={notes[memberId] || ''}
                         onChange={(e) => updateNote(memberId, e.target.value)}
                         placeholder="Enter notes for this team member..."
                         variant="outlined"
+                        size={isCompactMode ? "small" : "medium"}
                       />
                     </CardContent>
                   </Card>
@@ -327,8 +398,6 @@ const HuddleNotesTool = () => {
           </Grid>
         </Paper>
       )}
-
-
 
       {/* Snackbar for notifications */}
       <Snackbar
