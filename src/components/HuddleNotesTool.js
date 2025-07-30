@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Box,
   Paper,
@@ -43,93 +43,128 @@ const HuddleNotesTool = () => {
   const [isCompactMode, setIsCompactMode] = useState(false);
   const [teamMembersExpanded, setTeamMembersExpanded] = useState(true);
 
+  // Memoized values for performance
+  const teamMembersCount = useMemo(() => teamMembers.length, [teamMembers]);
+  const hasTeamMembers = useMemo(() => teamMembersCount > 0, [teamMembersCount]);
+  const hasRandomizedOrder = useMemo(() => randomizedOrder.length > 0, [randomizedOrder]);
+
   // Load settings from localStorage on component mount
   useEffect(() => {
-    const savedTeamMembers = localStorage.getItem('huddleTeamMembers');
-    const savedCompactMode = localStorage.getItem('huddleCompactMode');
-    const savedTeamMembersExpanded = localStorage.getItem('huddleTeamMembersExpanded');
-    
-    console.log('Loading from localStorage:', savedTeamMembers);
-    if (savedTeamMembers) {
+    const loadSettings = () => {
       try {
-        const parsedMembers = JSON.parse(savedTeamMembers);
-        console.log('Parsed members:', parsedMembers);
-        setTeamMembers(parsedMembers);
+        const savedTeamMembers = localStorage.getItem('huddleTeamMembers');
+        const savedCompactMode = localStorage.getItem('huddleCompactMode');
+        const savedTeamMembersExpanded = localStorage.getItem('huddleTeamMembersExpanded');
+        
+        if (savedTeamMembers) {
+          const parsedMembers = JSON.parse(savedTeamMembers);
+          setTeamMembers(parsedMembers);
+        }
+        
+        if (savedCompactMode !== null) {
+          setIsCompactMode(JSON.parse(savedCompactMode));
+        }
+        
+        if (savedTeamMembersExpanded !== null) {
+          setTeamMembersExpanded(JSON.parse(savedTeamMembersExpanded));
+        }
       } catch (error) {
-        console.error('Error loading team members from localStorage:', error);
+        console.error('Error loading settings from localStorage:', error);
       }
-    }
-    
-    // Load compact mode setting
-    if (savedCompactMode !== null) {
-      setIsCompactMode(JSON.parse(savedCompactMode));
-    }
-    
-    // Load team members expanded state
-    if (savedTeamMembersExpanded !== null) {
-      setTeamMembersExpanded(JSON.parse(savedTeamMembersExpanded));
-    }
-    
+    };
+
+    loadSettings();
     setIsLoaded(true);
   }, []);
+
+  // Debounced save function for team members
+  const saveTeamMembers = useCallback(
+    (() => {
+      let timeoutId;
+      return (members) => {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => {
+          try {
+            localStorage.setItem('huddleTeamMembers', JSON.stringify(members));
+          } catch (error) {
+            console.error('Error saving team members to localStorage:', error);
+          }
+        }, 300);
+      };
+    })(),
+    []
+  );
 
   // Save team members to localStorage whenever they change (but not on initial load)
   useEffect(() => {
     if (isLoaded) {
-      console.log('Saving to localStorage:', teamMembers);
-      localStorage.setItem('huddleTeamMembers', JSON.stringify(teamMembers));
+      saveTeamMembers(teamMembers);
     }
-  }, [teamMembers, isLoaded]);
+  }, [teamMembers, isLoaded, saveTeamMembers]);
 
   // Save compact mode setting to localStorage
   useEffect(() => {
     if (isLoaded) {
-      localStorage.setItem('huddleCompactMode', JSON.stringify(isCompactMode));
+      try {
+        localStorage.setItem('huddleCompactMode', JSON.stringify(isCompactMode));
+      } catch (error) {
+        console.error('Error saving compact mode to localStorage:', error);
+      }
     }
   }, [isCompactMode, isLoaded]);
 
   // Save team members expanded state to localStorage
   useEffect(() => {
     if (isLoaded) {
-      localStorage.setItem('huddleTeamMembersExpanded', JSON.stringify(teamMembersExpanded));
+      try {
+        localStorage.setItem('huddleTeamMembersExpanded', JSON.stringify(teamMembersExpanded));
+      } catch (error) {
+        console.error('Error saving team members expanded state to localStorage:', error);
+      }
     }
   }, [teamMembersExpanded, isLoaded]);
 
   // Add a new team member
-  const addTeamMember = () => {
+  const addTeamMember = useCallback(() => {
     if (newMemberName.trim()) {
       const newMember = {
         id: Date.now(),
         name: newMemberName.trim(),
       };
-      setTeamMembers([...teamMembers, newMember]);
+      setTeamMembers(prev => [...prev, newMember]);
       setNewMemberName('');
       setSnackbar({ open: true, message: 'Team member added and saved!', severity: 'success' });
     }
-  };
+  }, [newMemberName]);
 
   // Remove a team member
-  const removeTeamMember = (id) => {
-    setTeamMembers(teamMembers.filter(member => member.id !== id));
-    setRandomizedOrder(randomizedOrder.filter(memberId => memberId !== id));
-    const newNotes = { ...notes };
-    delete newNotes[id];
-    setNotes(newNotes);
+  const removeTeamMember = useCallback((id) => {
+    setTeamMembers(prev => prev.filter(member => member.id !== id));
+    setRandomizedOrder(prev => prev.filter(memberId => memberId !== id));
+    setNotes(prev => {
+      const newNotes = { ...prev };
+      delete newNotes[id];
+      return newNotes;
+    });
     setSnackbar({ open: true, message: 'Team member removed from storage!', severity: 'info' });
-  };
+  }, []);
 
   // Clear all team members
-  const clearAllTeamMembers = () => {
+  const clearAllTeamMembers = useCallback(() => {
     setTeamMembers([]);
     setRandomizedOrder([]);
     setNotes({});
-    localStorage.removeItem('huddleTeamMembers');
+    try {
+      localStorage.removeItem('huddleTeamMembers');
+    } catch (error) {
+      console.error('Error clearing team members from localStorage:', error);
+    }
     setSnackbar({ open: true, message: 'All team members cleared!', severity: 'warning' });
-  };
+  }, []);
 
   // Randomize team members
-  const randomizeTeam = () => {
-    if (teamMembers.length === 0) {
+  const randomizeTeam = useCallback(() => {
+    if (!hasTeamMembers) {
       setSnackbar({ open: true, message: 'Please add team members first!', severity: 'warning' });
       return;
     }
@@ -137,19 +172,30 @@ const HuddleNotesTool = () => {
     const shuffled = [...teamMembers].sort(() => Math.random() - 0.5);
     setRandomizedOrder(shuffled.map(member => member.id));
     setSnackbar({ open: true, message: 'Team order randomized!', severity: 'success' });
-  };
+  }, [teamMembers, hasTeamMembers]);
 
-  // Auto-save note changes
-  const updateNote = (memberId, noteText) => {
-    setNotes({
-      ...notes,
-      [memberId]: noteText
-    });
-  };
+  // Auto-save note changes with debouncing
+  const updateNote = useCallback(
+    (() => {
+      const timeouts = {};
+      return (memberId, noteText) => {
+        if (timeouts[memberId]) {
+          clearTimeout(timeouts[memberId]);
+        }
+        timeouts[memberId] = setTimeout(() => {
+          setNotes(prev => ({
+            ...prev,
+            [memberId]: noteText
+          }));
+        }, 500);
+      };
+    })(),
+    []
+  );
 
   // Export notes
-  const exportNotes = (format) => {
-    if (teamMembers.length === 0) {
+  const exportNotes = useCallback((format) => {
+    if (!hasTeamMembers) {
       setSnackbar({ open: true, message: 'No team members to export!', severity: 'warning' });
       return;
     }
@@ -176,23 +222,114 @@ const HuddleNotesTool = () => {
       });
     }
 
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `huddle-notes-${date}.${format}`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    
-    setSnackbar({ open: true, message: `Notes exported as ${format.toUpperCase()} successfully!`, severity: 'success' });
-  };
+    try {
+      const blob = new Blob([content], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `huddle-notes-${date}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      setSnackbar({ open: true, message: `Notes exported as ${format.toUpperCase()} successfully!`, severity: 'success' });
+    } catch (error) {
+      console.error('Error exporting notes:', error);
+      setSnackbar({ open: true, message: 'Error exporting notes!', severity: 'error' });
+    }
+  }, [teamMembers, randomizedOrder, notes, hasTeamMembers]);
 
-  // Get member by ID
-  const getMemberById = (id) => {
+  // Get member by ID - memoized for performance
+  const getMemberById = useCallback((id) => {
     return teamMembers.find(member => member.id === id);
-  };
+  }, [teamMembers]);
+
+  // Memoized team member list items
+  const teamMemberItems = useMemo(() => {
+    return teamMembers.map((member) => (
+      <ListItem key={member.id} sx={{ py: isCompactMode ? 0.5 : 1 }}>
+        <ListItemText primary={member.name} />
+        <ListItemSecondaryAction>
+          <IconButton
+            edge="end"
+            onClick={() => removeTeamMember(member.id)}
+            color="error"
+            size="small"
+          >
+            <DeleteIcon />
+          </IconButton>
+        </ListItemSecondaryAction>
+      </ListItem>
+    ));
+  }, [teamMembers, isCompactMode, removeTeamMember]);
+
+  // Memoized randomized order chips
+  const randomizedOrderChips = useMemo(() => {
+    return randomizedOrder.map((memberId, index) => {
+      const member = getMemberById(memberId);
+      return (
+        <Chip
+          key={memberId}
+          label={`${index + 1}. ${member.name}`}
+          color="primary"
+          variant="outlined"
+          size={isCompactMode ? "small" : "medium"}
+        />
+      );
+    });
+  }, [randomizedOrder, getMemberById, isCompactMode]);
+
+  // Memoized note cards
+  const noteCards = useMemo(() => {
+    return randomizedOrder.map((memberId, index) => {
+      const member = getMemberById(memberId);
+      
+      return (
+        <Grid item xs={12} key={memberId}>
+          <Card variant="outlined">
+            <CardContent sx={{ p: isCompactMode ? 1.5 : 2 }}>
+              <Typography variant="h6" gutterBottom>
+                {index + 1}. {member.name}
+              </Typography>
+              <TextField
+                fullWidth
+                multiline
+                rows={isCompactMode ? 2 : 3}
+                value={notes[memberId] || ''}
+                onChange={(e) => updateNote(memberId, e.target.value)}
+                placeholder="Enter notes for this team member..."
+                variant="outlined"
+                size={isCompactMode ? "small" : "medium"}
+              />
+            </CardContent>
+          </Card>
+        </Grid>
+      );
+    });
+  }, [randomizedOrder, getMemberById, notes, isCompactMode, updateNote]);
+
+  // Memoized compact mode toggle
+  const compactModeToggle = useMemo(() => (
+    <FormControlLabel
+      control={
+        <Switch
+          checked={isCompactMode}
+          onChange={(e) => setIsCompactMode(e.target.checked)}
+          color="primary"
+          size="small"
+        />
+      }
+      label="Compact"
+      labelPlacement="start"
+      sx={{ 
+        '& .MuiFormControlLabel-label': { 
+          fontSize: '0.875rem',
+          color: 'text.secondary'
+        }
+      }}
+    />
+  ), [isCompactMode]);
 
   return (
     <Box>
@@ -202,24 +339,7 @@ const HuddleNotesTool = () => {
           <Typography variant="h5">
             Team Members
           </Typography>
-          <FormControlLabel
-            control={
-              <Switch
-                checked={isCompactMode}
-                onChange={(e) => setIsCompactMode(e.target.checked)}
-                color="primary"
-                size="small"
-              />
-            }
-            label="Compact"
-            labelPlacement="start"
-            sx={{ 
-              '& .MuiFormControlLabel-label': { 
-                fontSize: '0.875rem',
-                color: 'text.secondary'
-              }
-            }}
-          />
+          {compactModeToggle}
         </Box>
         <Grid container spacing={isCompactMode ? 1 : 2} alignItems="center">
           <Grid item xs={12} sm={8}>
@@ -247,13 +367,13 @@ const HuddleNotesTool = () => {
           </Grid>
         </Grid>
 
-        {teamMembers.length > 0 && (
+        {hasTeamMembers && (
           <Box sx={{ mt: isCompactMode ? 1 : 2 }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }} 
                    onClick={() => setTeamMembersExpanded(!teamMembersExpanded)}>
                 <Typography variant="h6">
-                  Current Team ({teamMembers.length} members)
+                  Current Team ({teamMembersCount} members)
                 </Typography>
                 <IconButton size="small" sx={{ ml: 1 }}>
                   {teamMembersExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
@@ -270,21 +390,7 @@ const HuddleNotesTool = () => {
             </Box>
             <Collapse in={teamMembersExpanded}>
               <List dense={isCompactMode}>
-                {teamMembers.map((member) => (
-                  <ListItem key={member.id} sx={{ py: isCompactMode ? 0.5 : 1 }}>
-                    <ListItemText primary={member.name} />
-                    <ListItemSecondaryAction>
-                      <IconButton
-                        edge="end"
-                        onClick={() => removeTeamMember(member.id)}
-                        color="error"
-                        size="small"
-                      >
-                        <DeleteIcon />
-                      </IconButton>
-                    </ListItemSecondaryAction>
-                  </ListItem>
-                ))}
+                {teamMemberItems}
               </List>
             </Collapse>
           </Box>
@@ -304,7 +410,7 @@ const HuddleNotesTool = () => {
               color="secondary"
               startIcon={<ShuffleIcon />}
               onClick={randomizeTeam}
-              disabled={teamMembers.length === 0}
+              disabled={!hasTeamMembers}
               size={isCompactMode ? "small" : "medium"}
             >
               Randomize Order
@@ -318,7 +424,7 @@ const HuddleNotesTool = () => {
                   variant="outlined"
                   startIcon={<DownloadIcon />}
                   onClick={() => exportNotes('txt')}
-                  disabled={teamMembers.length === 0}
+                  disabled={!hasTeamMembers}
                   size={isCompactMode ? "small" : "medium"}
                 >
                   Export TXT
@@ -330,7 +436,7 @@ const HuddleNotesTool = () => {
                   variant="outlined"
                   startIcon={<DownloadIcon />}
                   onClick={() => exportNotes('csv')}
-                  disabled={teamMembers.length === 0}
+                  disabled={!hasTeamMembers}
                   size={isCompactMode ? "small" : "medium"}
                 >
                   Export CSV
@@ -340,61 +446,26 @@ const HuddleNotesTool = () => {
           </Grid>
         </Grid>
 
-        {randomizedOrder.length > 0 && (
+        {hasRandomizedOrder && (
           <Box sx={{ mt: isCompactMode ? 1 : 2 }}>
             <Typography variant="h6" gutterBottom>
               Randomized Order
             </Typography>
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-              {randomizedOrder.map((memberId, index) => {
-                const member = getMemberById(memberId);
-                return (
-                  <Chip
-                    key={memberId}
-                    label={`${index + 1}. ${member.name}`}
-                    color="primary"
-                    variant="outlined"
-                    size={isCompactMode ? "small" : "medium"}
-                  />
-                );
-              })}
+              {randomizedOrderChips}
             </Box>
           </Box>
         )}
       </Paper>
 
       {/* Notes Section */}
-      {randomizedOrder.length > 0 && (
+      {hasRandomizedOrder && (
         <Paper elevation={3} sx={{ p: isCompactMode ? 2 : 3 }}>
           <Typography variant="h5" gutterBottom>
             Notes for Each Team Member
           </Typography>
           <Grid container spacing={isCompactMode ? 1 : 2}>
-            {randomizedOrder.map((memberId, index) => {
-              const member = getMemberById(memberId);
-              
-              return (
-                <Grid item xs={12} key={memberId}>
-                  <Card variant="outlined">
-                    <CardContent sx={{ p: isCompactMode ? 1.5 : 2 }}>
-                      <Typography variant="h6" gutterBottom>
-                        {index + 1}. {member.name}
-                      </Typography>
-                      <TextField
-                        fullWidth
-                        multiline
-                        rows={isCompactMode ? 2 : 3}
-                        value={notes[memberId] || ''}
-                        onChange={(e) => updateNote(memberId, e.target.value)}
-                        placeholder="Enter notes for this team member..."
-                        variant="outlined"
-                        size={isCompactMode ? "small" : "medium"}
-                      />
-                    </CardContent>
-                  </Card>
-                </Grid>
-              );
-            })}
+            {noteCards}
           </Grid>
         </Paper>
       )}
